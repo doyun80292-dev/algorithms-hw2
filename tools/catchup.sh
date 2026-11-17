@@ -5,7 +5,7 @@
 #
 # 덮어쓰는 것: src/ tests/ experiments/ PLAN.md .github/copilot-instructions.md
 # (그 폴더에만 있던 내 파일은 지워진다. 커밋해 두었으므로 git으로 되찾을 수 있다.)
-# SPEC.md는 아직 템플릿 그대로일 때만 덮어쓴다. AGENT_LOG.md는 건드리지 않는다.
+# SPEC.md는 아직 템플릿 그대로일 때만 덮어쓴다.
 set -e
 
 step="$1"
