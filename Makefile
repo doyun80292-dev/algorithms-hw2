@@ -2,15 +2,18 @@
 # 컨테이너 안에서 실행한다 (Codespaces 터미널, 또는 docker compose exec lab bash).
 #
 #   make test        유닛 테스트 (tests/test_*.py)
-#   make serve       단축 URL 웹 서버 (포트 8000)
-#   make experiment  적재율에 따른 탐지 횟수 실험
+#   make serve       단축 URL 웹 서버 (포트 8000, 선형 탐지: make serve TABLE=linear)
+#   make experiment  적재율에 따른 탐지 횟수 실험 (개별 체이닝, 0.25~4)
+#   make comparison  개별 체이닝 vs 선형 탐지 비교 실험 (0.1~0.9)
+#   make report      실험 결과로 report/final_report.pdf 생성 (Chrome/Chromium 필요)
 #   make clean       캐시 정리
 #
 # 외부 라이브러리를 쓰지 않는다. Python 표준 모듈만으로 돈다.
 
 PORT ?= 8000
+TABLE ?= chaining
 
-.PHONY: all test serve experiment clean
+.PHONY: all test serve experiment comparison report clean
 
 all: test
 
@@ -18,10 +21,16 @@ test:
 	@python3 -m unittest discover -s tests -v
 
 serve:
-	@python3 src/server.py --port $(PORT)
+	@python3 src/server.py --port $(PORT) --table $(TABLE)
 
 experiment:
 	@python3 experiments/probe_experiment.py
 
+comparison:
+	@python3 experiments/comparison_experiment.py
+
+report:
+	@python3 report/build_report.py
+
 clean:
-	rm -rf src/__pycache__ tests/__pycache__ experiments/__pycache__
+	rm -rf src/__pycache__ tests/__pycache__ experiments/__pycache__ tools/__pycache__ report/final_report.html
