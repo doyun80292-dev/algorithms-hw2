@@ -1,0 +1,9 @@
+<p>이 저장소의 작업은 에이전트(Claude)가 수행했다. 아래는 커밋 이력·테스트 출력으로 확인되는 실제 오류만 적었다.</p>
+<ul>
+<li><b>선형 탐지가 작은 테이블에서 확장 전에 가득 참 (#8)</b>: 첫 구현은 <code>put</code>에서 적재율 검사를 <i>넣은 뒤</i>에만 했다.
+공통 계약 테스트 <code>test_capacity_one</code>(capacity=1, max_load=1.0, 키 3개)이 두 번째 키에서 <code>OverflowError: 테이블이 가득 찼습니다 (capacity=1)</code>로 실패해 발견했다.
+체이닝은 α&gt;1이 가능해 같은 테스트를 통과했으므로, 계약 테스트를 두 구현이 공유한 덕분에 드러난 오류다. 테스트는 고치지 않고, 빈 칸이 없을 때 <code>max_load</code>가 있으면 먼저 확장한 뒤 다시 넣도록 코드를 고쳤다
+(<code>max_load=None</code>일 때만 <code>OverflowError</code>). 커밋 “Step 8: 선형 탐지 LinearProbingTable 구현” 본문에 기록.</li>
+<li><b>그래프 x축 눈금이 그림 영역 밖에 찍힘 (#6)</b>: SVG 그리기 함수가 범위(0.25~4) 밖의 눈금 0까지 그려, y축 이름 근처에 ‘0’이 떠 있었다.
+테스트로는 잡히지 않았고 <code>results.svg</code>를 브라우저로 렌더링해 보고 발견했다. 범위 밖 눈금은 건너뛰도록 고쳤다. 그림은 실행해 눈으로 확인해야 한다는 점을 보여 준다.</li>
+</ul>

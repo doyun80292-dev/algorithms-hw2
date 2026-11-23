@@ -33,4 +33,4 @@ report:
 	@python3 report/build_report.py
 
 clean:
-	rm -rf src/__pycache__ tests/__pycache__ experiments/__pycache__
+	rm -rf src/__pycache__ tests/__pycache__ experiments/__pycache__ tools/__pycache__ report/final_report.html
