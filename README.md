@@ -4,7 +4,7 @@
 짧은 링크로 접속하면 원래 주소로 보내는 서비스를 **직접 구현한 해시 테이블** 위에 만들었습니다.
 수업 단계(1~7)에서는 개별 체이닝, 과제(#8)에서는 선형 탐지를 구현하고 두 방식을 비교했습니다.
 
-- 저장소: https://github.com/&lt;GitHub 계정&gt;/algorithms-hw2
+- 저장소: https://github.com/doyun80292-dev/algorithms-hw2
 - 시작 템플릿: [lec-algorithm/hw2-starter-2026](https://github.com/lec-algorithm/hw2-starter-2026)
 - 과제 안내: [lec-algorithm.github.io/lecture/article/hw2-2026](https://lec-algorithm.github.io/lecture/article/hw2-2026/)
 - 보고서: [`report/final_report.pdf`](report/final_report.pdf)
@@ -14,7 +14,7 @@
 외부 라이브러리를 쓰지 않습니다. Python 3.9 이상만 있으면 됩니다(Codespaces 컨테이너에 들어 있음).
 
 ```sh
-git clone https://github.com/<GitHub 계정>/algorithms-hw2.git
+git clone https://github.com/doyun80292-dev/algorithms-hw2.git
 cd algorithms-hw2
 # 로컬 Docker를 쓸 때
 docker compose up -d && docker compose exec lab bash
