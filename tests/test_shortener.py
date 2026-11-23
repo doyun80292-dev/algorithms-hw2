@@ -141,6 +141,21 @@ class TestShortenerChaining(ShortenerContract, unittest.TestCase):
     TABLE = "chaining"
 
 
+class TestShortenerLinear(ShortenerContract, unittest.TestCase):
+    TABLE = "linear"
+
+
+class TestBothTablesAgree(unittest.TestCase):
+    def test_same_codes_for_same_input(self):
+        a, b = Shortener(table="chaining"), Shortener(table="linear")
+        urls = ["https://same.example/%d" % (i % 700) for i in range(1000)]
+        for u in urls:
+            self.assertEqual(a.shorten(u), b.shorten(u))
+        self.assertEqual(len(a), len(b))
+        for code in ("1", "a", "Z", "10", "bh", "zz"):
+            self.assertEqual(a.expand(code), b.expand(code))
+
+
 class TestValidateUrl(unittest.TestCase):
     def test_returns_stripped(self):
         self.assertEqual(validate_url("  https://a.com  "), "https://a.com")

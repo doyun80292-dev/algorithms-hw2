@@ -22,7 +22,7 @@ class ServerTestBase:
         self.app = App(table=self.TABLE)
         self.httpd = make_server(self.app, "127.0.0.1", 0)
         self.port = self.httpd.server_address[1]
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.httpd.serve_forever, args=(0.05,), daemon=True)
         self.thread.start()
 
     def tearDown(self):
@@ -142,6 +142,46 @@ class ServerTestBase:
 
 class TestServerChaining(ServerTestBase, unittest.TestCase):
     TABLE = "chaining"
+
+
+class TestServerLinear(ServerTestBase, unittest.TestCase):
+    TABLE = "linear"
+
+    def test_primary_uses_linear_table(self):
+        self.assertEqual(self.app.primary.table_name, "linear")
+
+
+class TestTableSwitch(ServerTestBase, unittest.TestCase):
+    """/table 에서 두 알고리즘을 고를 수 있다 (과제 #8)."""
+
+    def test_both_tables_receive_same_urls(self):
+        self.shorten("https://example.com/a")
+        self.shorten("https://example.com/b")
+        self.assertEqual(len(self.app.chaining), 2)
+        self.assertEqual(len(self.app.linear), 2)
+        self.assertEqual(self.app.linear.expand("2"), "https://example.com/b")
+
+    def test_table_page_linear(self):
+        self.shorten("https://example.com/a")
+        self.shorten("https://example.com/b")
+        resp, html = self.request("GET", "/table?impl=linear")
+        self.assertEqual(resp.status, 200)
+        self.assertIn("선형 탐지", html)
+        self.assertIn("https://example.com/a", html)
+        self.assertIn("탐색", html)          # 처음 칸에서 몇 칸 탐색했는지
+        self.assertIn("EMPTY", html)
+        self.assertIn("31", html)
+
+    def test_table_page_has_both_switch_links(self):
+        resp, html = self.request("GET", "/table")
+        self.assertIn("impl=chaining", html)
+        self.assertIn("impl=linear", html)
+
+    def test_table_page_has_step_animation(self):
+        resp, html = self.request("GET", "/table?impl=linear")
+        self.assertIn('id="sim"', html)
+        resp, html = self.request("GET", "/table?impl=chaining")
+        self.assertIn('id="sim"', html)
 
 
 if __name__ == "__main__":
