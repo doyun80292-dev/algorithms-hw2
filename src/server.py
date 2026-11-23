@@ -33,14 +33,30 @@ def query_value(pairs, name):
 
 
 class App:
-    """서버가 들고 있는 상태. 단축기 하나(primary)."""
+    """서버가 들고 있는 상태.
+
+    두 단축기(체이닝, 선형 탐지)에 같은 URL을 같은 순서로 넣는다. 일련번호가 같으므로 코드도 같다.
+    리다이렉트·조회는 --table로 고른 primary가 맡고, /table은 두 쪽을 모두 보여 줄 수 있다.
+    """
 
     def __init__(self, table="chaining"):
+        if table not in ("chaining", "linear"):
+            raise ValueError("table은 chaining 또는 linear")
         self.table = table
-        self.primary = Shortener(table=table)
+        self.chaining = Shortener(table="chaining")
+        self.linear = Shortener(table="linear")
+        self.primary = self.chaining if table == "chaining" else self.linear
+
+    def shortener(self, impl):
+        return self.linear if impl == "linear" else self.chaining
 
     def shorten(self, url):
-        return self.primary.shorten(url)
+        code = self.primary.shorten(url)        # 잘못된 URL이면 여기서 예외 → 둘 다 바뀌지 않음
+        other = self.linear if self.primary is self.chaining else self.chaining
+        other_code = other.shorten(url)
+        if other_code != code:                  # 같은 입력·같은 순서이면 일어나지 않아야 한다
+            raise RuntimeError("두 단축기의 코드가 어긋났습니다: %s != %s" % (code, other_code))
+        return code
 
     def expand(self, code):
         return self.primary.expand(code)
@@ -82,7 +98,7 @@ details.node{border:2px solid var(--accent);border-radius:8px;background:#f4f8fe
 details.node>summary{cursor:pointer;padding:4px 8px;list-style:none}
 details.node>summary::-webkit-details-marker{display:none}
 details.node .k{font-size:12px;word-break:break-all;font-family:ui-monospace,monospace;display:block}
-details.node .c{font-size:13px}
+details.node .c{font-size:13px;display:block}
 details.node .c b{color:var(--accent2)}
 .horner{padding:6px 8px;border-top:1px solid var(--line);font-size:12px;max-height:280px;overflow:auto;background:#fff}
 .horner table{border-collapse:collapse;width:100%}
@@ -194,19 +210,179 @@ def render_table_chaining(base, table, which, title):
                    horner_html(table, key)))
             parts.append("<span class=\"arrow\">→</span>")
         parts.append("<span class=\"null\">NULL</span>")
-        out.append("<div class=\"bucket%s\"><div class=\"idx\">[%d]</div><div class=\"chain\">%s</div></div>"
-                   % ("" if chain else " empty", i, "".join(parts)))
+        out.append("<div class=\"bucket%s\" id=\"b%d\"><div class=\"idx\">[%d]</div><div class=\"chain\">%s</div></div>"
+                   % ("" if chain else " empty", i, i, "".join(parts)))
     out.append("</div></div>")
     return "".join(out)
 
 
-def render_table(app, base, which):
-    s = app.primary
+def render_table_linear(base, table, which, title):
+    from linear_probing import TOMBSTONE
+    st = table.stats()
+    m = table.capacity
+    out = ["<div class=\"card\"><h2>%s</h2>" % escape(title),
+           "<div class=\"stats\"><span>칸 수 M = %d</span><span>키 n = %d</span>"
+           "<span>적재율 α = %.3f</span><span>가장 긴 군집 %d칸</span><span>max_load = %s</span></div>"
+           % (m, st.size, st.load_factor, st.longest_cluster, table.max_load),
+           "<p class=\"muted\">칸마다 키 하나만 들어갑니다. 처음 계산한 칸 h가 차 있으면 "
+           "<code>index = (index + 1) mod M</code>으로 다음 칸을 봅니다(끝 칸 다음은 0번). "
+           "<b>탐색 n칸</b>은 이 키를 찾을 때 들여다본 칸 수이고, 경로는 그 칸 번호들입니다. "
+           "지운 칸은 TOMBSTONE으로 남겨 탐색 경로가 끊기지 않게 합니다. 칸을 누르면 호너 계산이 펼쳐집니다.</p>",
+           "<div class=\"toolbar\"><label><input type=\"checkbox\" "
+           "onchange=\"document.getElementById('buckets').classList.toggle('hide-empty',this.checked)\"> "
+           "빈 칸 숨기기</label></div><div id=\"buckets\">"]
+    for i, slot in enumerate(table.snapshot()):
+        if slot is None:
+            out.append("<div class=\"bucket empty\" id=\"b%d\"><div class=\"idx\">[%d]</div>"
+                       "<span class=\"null\">EMPTY</span></div>" % (i, i))
+            continue
+        if slot is TOMBSTONE:
+            out.append("<div class=\"bucket\" id=\"b%d\"><div class=\"idx\">[%d]</div>"
+                       "<span class=\"null\">TOMBSTONE (지운 자리)</span></div>" % (i, i))
+            continue
+        key, value = slot
+        url, code = (key, value) if which == "url" else (value, key)
+        link = "%s/%s" % (base, code)
+        home = table.index_of(key)
+        path = table.probe_path(key)
+        moved = len(path) - 1
+        badge = ("<span class=\"badge home\">처음 칸 그대로</span>" if moved == 0 else
+                 "<span class=\"badge moved\">충돌 → %d칸 밀림</span>" % moved)
+        out.append(
+            "<div class=\"bucket\" id=\"b%d\"><div class=\"idx\">[%d]</div>"
+            "<details class=\"node lp\"><summary><span class=\"k\">%s</span>"
+            "<span class=\"c\">코드 <b>%s</b> · <a href=\"%s\">%s</a></span>"
+            "<span class=\"c\">처음 칸 h = <b>%d</b> → 저장 칸 %d · 탐색 %d칸 %s</span>"
+            "<span class=\"c mono\">경로: %s</span></summary>%s</details></div>"
+            % (i, i, escape(key), escape(code), escape(link, quote=True), escape(link),
+               home, i, len(path), badge, " → ".join("[%d]" % p for p in path),
+               horner_html(table, key)))
+    out.append("</div></div>")
+    return "".join(out)
+
+
+SIM_JS = r"""
+(function(){
+var D = JSON.parse(document.getElementById('simdata').textContent);
+var M = D.m, form = document.getElementById('sim'), logEl = document.getElementById('simlog');
+var timer = null;
+function cps(s){ var a=[]; for (var ch of s) a.push(ch); return a; }  // 파이썬 ord()와 같게 코드 포인트 단위
+function clear(){ document.querySelectorAll('.bucket.hl,.bucket.hl2,.bucket.hl3').forEach(function(e){e.classList.remove('hl','hl2','hl3');}); }
+function mark(i, cls){ var e=document.getElementById('b'+i); if(e){ e.classList.add(cls); return e; } }
+function run(mode){
+  if (timer) clearInterval(timer);
+  clear(); logEl.innerHTML='';
+  var key = document.getElementById('simkey').value;
+  var steps = [], h = 0, chars = cps(key);
+  steps.push(['h = 0 에서 시작, M = '+M, null]);
+  chars.forEach(function(c, i){
+    var o = c.codePointAt(0), nh = (31*h + o) % M;
+    steps.push(['['+i+'] \''+c+'\' ord='+o+' : (31×'+h+' + '+o+') mod '+M+' = '+nh, null]);
+    h = nh;
+  });
+  steps.push(['처음 칸 = '+h, function(){ mark(h,'hl'); }]);
+  if (D.kind === 'chaining') {
+    var chain = D.slots[h], found = false;
+    if (chain.length === 0) steps.push(['['+h+'] 는 NULL → 비교 0번', null]);
+    for (var k=0;k<chain.length;k++){
+      (function(k){
+        var eq = chain[k] === key;
+        steps.push(['노드 '+(k+1)+' 비교: '+chain[k]+(eq?'  ✔ 같음':'  ✘ 다름'), null]);
+      })(k);
+      if (chain[k] === key){ found = true; break; }
+    }
+    var n = found ? chain.indexOf(key)+1 : chain.length;
+    if (mode === 'search') steps.push([found ? '성공 탐색: 노드 '+n+'개 비교' : '실패 탐색: 노드 '+n+'개 비교 후 NULL', function(){ mark(h, found?'hl3':'hl2'); }]);
+    else steps.push([found ? '이미 있는 키 → 값만 덮어씀 (비교 '+n+'번)' : '리스트 끝(NULL 자리)에 새 노드를 붙임 (비교 '+n+'번)', function(){ mark(h,'hl3'); }]);
+  } else {
+    var i = h, firstFree = -1, done = false, count = 0, found = false;
+    for (var t=0;t<M && !done;t++){
+      var s = D.slots[i]; count++;
+      (function(i, s){
+        var msg, cls='hl';
+        if (s === null){ msg='['+i+'] EMPTY → 탐색 끝'; done = true; if(firstFree<0) firstFree=i; }
+        else if (s === '\u0000TOMB'){ msg='['+i+'] TOMBSTONE → 건너뛰고 다음 칸'; if(firstFree<0) firstFree=i; }
+        else if (s === key){ msg='['+i+'] '+s+'  ✔ 같은 키'; done = true; cls='hl3'; }
+        else { msg='['+i+'] '+s+'  ✘ 다른 키 → (index+1) mod '+M; }
+        steps.push([msg, function(){ mark(i, cls).scrollIntoView({block:'nearest'}); }]);
+      })(i, s);
+      if (s === key){ found = true; break; }
+      if (s === null) break;
+      i = (i + 1) % M;
+    }
+    if (mode === 'search') steps.push([found ? '성공 탐색: '+count+'칸 탐색' : '실패 탐색: '+count+'칸 탐색', null]);
+    else if (found) steps.push(['이미 있는 키 → 값만 덮어씀', null]);
+    else if (firstFree >= 0) steps.push(['['+firstFree+'] 에 저장 ('+count+'칸 탐색, 처음 칸에서 '+((firstFree-h+M)%M)+'칸 밀림)', function(){ mark(firstFree,'hl3'); }]);
+    else steps.push(['빈 칸이 없음 → 테이블을 늘려야 함', null]);
+  }
+  var j = 0;
+  timer = setInterval(function(){
+    if (j >= steps.length){ clearInterval(timer); timer=null; return; }
+    var li = document.createElement('li'); li.textContent = steps[j][0]; logEl.appendChild(li);
+    if (steps[j][1]) steps[j][1]();
+    logEl.scrollTop = logEl.scrollHeight; j++;
+  }, Number(document.getElementById('simspeed').value));
+}
+form.addEventListener('submit', function(e){ e.preventDefault(); run(e.submitter && e.submitter.value === 'insert' ? 'insert' : 'search'); });
+})();
+"""
+
+SIM_CSS = """
+.sim ol{max-height:260px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;
+padding:8px 8px 8px 32px;font-family:ui-monospace,monospace;font-size:13px;word-break:break-all}
+.bucket.hl{background:#fff6d6}.bucket.hl2{background:#fde3e3}.bucket.hl3{background:#dff5ea}
+.badge{display:inline-block;border-radius:10px;padding:0 8px;font-size:12px;margin-left:4px}
+.badge.home{background:#dff5ea;color:#0d6b47}.badge.moved{background:#fde9de;color:#9a3a12}
+details.node.lp{max-width:none;flex:1 1 auto}
+"""
+
+
+def sim_html(table, which):
+    """현재 테이블을 그대로 복사해 브라우저에서 삽입·검색 과정을 한 단계씩 보여 준다(테이블은 바꾸지 않음)."""
+    import json
+    from linear_probing import TOMBSTONE
+    if table.kind == "chaining":
+        slots = [[k for k, _ in chain] for chain in table.snapshot()]
+    else:
+        slots = [None if s is None else ("\u0000TOMB" if s is TOMBSTONE else s[0]) for s in table.snapshot()]
+    data = ('{"kind": %s, "m": %d, "slots": %s}'
+            % (json.dumps(table.kind), table.capacity, json.dumps(slots, ensure_ascii=False)))
+    data = data.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    example = "https://example.com/new" if which == "url" else "1"
+    return ("<div class=\"card sim\"><h3>삽입·검색 과정 단계별 보기</h3>"
+            "<p class=\"muted\">아래 테이블의 현재 상태로 호너 해시 계산 → 칸 찾기 → %s 과정을 한 줄씩 보여 줍니다. "
+            "실제 테이블은 바뀌지 않습니다.</p>"
+            "<form id=\"sim\" class=\"row-form\"><input type=\"text\" id=\"simkey\" value=\"%s\" autocomplete=\"off\">"
+            "<button type=\"submit\" value=\"search\">검색 과정</button>"
+            "<button type=\"submit\" value=\"insert\" class=\"secondary\">삽입 과정</button>"
+            "<select id=\"simspeed\" aria-label=\"속도\"><option value=\"700\">보통</option>"
+            "<option value=\"1400\">느리게</option><option value=\"150\">빠르게</option></select></form>"
+            "<ol id=\"simlog\"></ol></div>"
+            "<script type=\"application/json\" id=\"simdata\">%s</script><script>%s</script>"
+            % ("연결 리스트 비교" if table.kind == "chaining" else "다음 칸 탐색",
+               escape(example, quote=True), data, SIM_JS))
+
+
+def render_table(app, base, impl, which):
+    s = app.shortener(impl)
     table = s.url_table if which == "url" else s.code_table
     name = "URL → 코드" if which == "url" else "코드 → URL"
-    tabs = ("<div class=\"toolbar\"><span>테이블:</span>"
-            "<a href=\"/table?which=url\">URL → 코드</a> · <a href=\"/table?which=code\">코드 → URL</a></div>")
-    body = tabs + render_table_chaining(base, table, which, "개별 체이닝 · %s 테이블" % name)
+
+    def link(i, w, label):
+        on = " style=\"font-weight:700\"" if (i, w) == (impl, which) or (w is None and i == impl) else ""
+        return "<a href=\"/table?impl=%s&amp;which=%s\"%s>%s</a>" % (i, w or which, on, label)
+
+    tabs = ("<div class=\"toolbar\"><span>알고리즘:</span>%s · %s"
+            "<span style=\"margin-left:12px\">테이블:</span>%s · %s"
+            "<span class=\"muted\">(리다이렉트에 쓰는 쪽: %s)</span></div>"
+            % (link("chaining", None, "개별 체이닝"), link("linear", None, "선형 탐지"),
+               link(impl, "url", "URL → 코드"), link(impl, "code", "코드 → URL"),
+               "개별 체이닝" if app.table == "chaining" else "선형 탐지"))
+    if impl == "linear":
+        view = render_table_linear(base, table, which, "선형 탐지 · %s 테이블" % name)
+    else:
+        view = render_table_chaining(base, table, which, "개별 체이닝 · %s 테이블" % name)
+    body = "<style>%s</style>%s%s%s" % (SIM_CSS, tabs, sim_html(table, which), view)
     return page("해시 테이블", body, "table")
 
 
@@ -247,7 +423,10 @@ def make_handler(app):
                 which = query_value(query, "which") or "url"
                 if which not in ("url", "code"):
                     which = "url"
-                return self.send_html(200, render_table(app, self.base_url(), which))
+                impl = query_value(query, "impl") or app.table
+                if impl not in ("chaining", "linear"):
+                    impl = app.table
+                return self.send_html(200, render_table(app, self.base_url(), impl, which))
             if path == "/expand":
                 code = (query_value(query, "code") or "").strip()
                 url = app.expand(code)

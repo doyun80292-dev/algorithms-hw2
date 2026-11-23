@@ -22,7 +22,7 @@ class ServerTestBase:
         self.app = App(table=self.TABLE)
         self.httpd = make_server(self.app, "127.0.0.1", 0)
         self.port = self.httpd.server_address[1]
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.httpd.serve_forever, args=(0.05,), daemon=True)
         self.thread.start()
 
     def tearDown(self):
