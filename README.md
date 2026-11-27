@@ -24,9 +24,10 @@ docker compose up -d && docker compose exec lab bash
 
 | 하고 싶은 것 | 명령 |
 | --- | --- |
-| 테스트 (153개) | `make test` |
+| 테스트 (160개) | `make test` |
 | 웹 서버 (포트 8000, 개별 체이닝) | `make serve` |
 | 웹 서버 (선형 탐지로 리다이렉트) | `make serve TABLE=linear` |
+| 웹 서버 (충돌 시연용, 칸 수 8) | `make serve CAP=8` |
 | 적재율 실험 (체이닝, α 0.25~4) | `make experiment` |
 | 비교 실험 (체이닝 vs 선형 탐지, α 0.1~0.9) | `make comparison` |
 | 보고서 PDF 다시 만들기 (Chrome/Chromium 필요) | `make report` |
@@ -40,6 +41,20 @@ docker compose up -d && docker compose exec lab bash
 5. `/table` 에서 해시 테이블 내부를 봅니다. 위쪽에서 **개별 체이닝 / 선형 탐지**, **URL→코드 / 코드→URL** 테이블을 고르고,
    노드(칸)를 누르면 호너 해시 계산 과정이 펼쳐집니다. **검색 과정 / 삽입 과정** 버튼은 입력한 키가 어느 칸으로 가고
    어떤 노드·칸을 거치는지 한 줄씩 보여 줍니다.
+
+### 충돌 시연
+
+칸 수가 작을수록 충돌이 잘 일어납니다. `make serve CAP=8`로 띄운 뒤 아래 URL을 차례로 줄이고 `/table`을 엽니다.
+
+| 칸 수 | 같은 칸으로 가는 URL | 호너 해시 h |
+| --- | --- | --- |
+| M = 8 (`CAP=8`) | `https://yonsei.ac.kr`, `https://google.com` | 3 |
+| M = 11 (기본) | `https://github.com`, `https://www.naver.com` | 6 |
+| M = 11 (기본) | `https://kakao.com`, `https://learnus.org` | 4 |
+
+- 개별 체이닝: 그 칸에 `충돌: 같은 칸 h = 3에 키 2개`가 표시되고 두 노드가 화살표로 이어집니다.
+- 선형 탐지: 뒤에 넣은 URL에 `충돌 → n칸 밀림`과 탐색 경로(예: `[3] → [4] → [5]`)가 표시됩니다.
+- 노드를 누르면 글자별 호너 계산이 펼쳐지고, 마지막 값이 그 칸 번호와 같습니다.
 
 휴대폰에서 열려면 Codespaces 포트 탭에서 8000번을 **Public**으로 바꾸고 Forwarded Address를 엽니다.
 짧은 링크는 `X-Forwarded-Host` 헤더를 먼저 읽으므로 Codespaces 공개 주소로 만들어집니다. 확인 후 포트를 Private으로 되돌립니다.
