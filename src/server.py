@@ -39,12 +39,15 @@ class App:
     리다이렉트·조회는 --table로 고른 primary가 맡고, /table은 두 쪽을 모두 보여 줄 수 있다.
     """
 
-    def __init__(self, table="chaining"):
+    def __init__(self, table="chaining", capacity=11):
         if table not in ("chaining", "linear"):
             raise ValueError("table은 chaining 또는 linear")
+        if not isinstance(capacity, int) or isinstance(capacity, bool) or capacity < 1:
+            raise ValueError("capacity는 1 이상의 정수여야 합니다")
         self.table = table
-        self.chaining = Shortener(table="chaining")
-        self.linear = Shortener(table="linear")
+        self.capacity = capacity
+        self.chaining = Shortener(table="chaining", capacity=capacity)
+        self.linear = Shortener(table="linear", capacity=capacity)
         self.primary = self.chaining if table == "chaining" else self.linear
 
     def shortener(self, impl):
@@ -197,7 +200,9 @@ def render_table_chaining(base, table, which, title):
            "빈 칸 숨기기</label></div><div id=\"buckets\">"]
     for i, chain in enumerate(table.snapshot()):
         parts = []
-        for key, value in chain:
+        if len(chain) > 1:
+            parts.append("<span class=\"badge moved\">충돌: 같은 칸 h = %d에 키 %d개</span>" % (i, len(chain)))
+        for pos, (key, value) in enumerate(chain, start=1):
             if which == "url":
                 url, code = key, value
             else:
@@ -205,9 +210,10 @@ def render_table_chaining(base, table, which, title):
             link = "%s/%s" % (base, code)
             parts.append(
                 "<details class=\"node\"><summary><span class=\"k\">%s</span>"
-                "<span class=\"c\">코드 <b>%s</b> · <a href=\"%s\">%s</a></span></summary>%s</details>"
+                "<span class=\"c\">코드 <b>%s</b> · <a href=\"%s\">%s</a></span>"
+                "<span class=\"c\">h = <b>%d</b> · 리스트 %d번째 · 비교 %d회</span></summary>%s</details>"
                 % (escape(key), escape(code), escape(link, quote=True), escape(link),
-                   horner_html(table, key)))
+                   i, pos, pos, horner_html(table, key)))
             parts.append("<span class=\"arrow\">→</span>")
         parts.append("<span class=\"null\">NULL</span>")
         out.append("<div class=\"bucket%s\" id=\"b%d\"><div class=\"idx\">[%d]</div><div class=\"chain\">%s</div></div>"
@@ -478,15 +484,25 @@ def make_server(app, host="0.0.0.0", port=8000, quiet=True):
     return httpd
 
 
-def main(argv=None):
+def parse_args(argv=None):
     p = argparse.ArgumentParser(description="URL 단축 웹 서버")
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--table", choices=("chaining", "linear"), default="chaining")
+    p.add_argument("--capacity", type=int, default=11,
+                   help="두 해시 테이블의 처음 칸 수 M (충돌 시연은 8처럼 작게)")
     args = p.parse_args(argv)
-    app = App(table=args.table)
+    if args.capacity < 1:
+        p.error("--capacity는 1 이상이어야 합니다")
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    app = App(table=args.table, capacity=args.capacity)
     httpd = make_server(app, args.host, args.port, quiet=False)
-    print("URL 단축기 (%s): http://localhost:%d  (끝내려면 Ctrl+C)" % (args.table, args.port))
+    print("URL 단축기 (%s, M = %d): http://localhost:%d  (끝내려면 Ctrl+C)"
+          % (args.table, args.capacity, args.port))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

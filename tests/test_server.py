@@ -186,3 +186,80 @@ class TestTableSwitch(ServerTestBase, unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCollisionDemo(unittest.TestCase):
+    """충돌 시연 (SPEC 5절 보완): 칸 수를 줄여 실제 충돌을 만들고 화면에 드러나는지 본다.
+
+    M = 11에서 https://github.com 과 https://www.naver.com 은 호너 해시가 둘 다 6이다.
+    """
+    A, B = "https://github.com", "https://www.naver.com"
+
+    def start(self, **kw):
+        self.app = App(**kw)
+        self.httpd = make_server(self.app, "127.0.0.1", 0)
+        port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, args=(0.05,), daemon=True).start()
+        self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
+        self.port = port
+
+    def get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        data = resp.read().decode("utf-8")
+        conn.close()
+        return resp, data
+
+    def post(self, url):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/shorten", body=urlencode({"url": url}),
+                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        conn.getresponse().read()
+        conn.close()
+
+    def test_default_capacity_is_11(self):
+        self.start()
+        self.assertEqual(self.app.chaining.url_table.capacity, 11)
+        self.assertEqual(self.app.linear.url_table.capacity, 11)
+
+    def test_capacity_option(self):
+        self.start(capacity=8)
+        self.assertEqual(self.app.chaining.url_table.capacity, 8)
+        self.assertEqual(self.app.linear.url_table.capacity, 8)
+        self.assertEqual(self.app.chaining.code_table.capacity, 8)
+
+    def test_capacity_invalid(self):
+        with self.assertRaises(ValueError):
+            App(capacity=0)
+
+    def test_chaining_collision_is_labeled(self):
+        self.start()
+        self.post(self.A)
+        self.post(self.B)
+        _, html = self.get("/table?impl=chaining")
+        self.assertIn("충돌", html)
+        self.assertIn("같은 칸 h = 6", html)
+        self.assertIn("최종 칸 번호 = <b>6</b>", html)
+
+    def test_chaining_no_collision_label_without_collision(self):
+        self.start()
+        self.post(self.A)
+        _, html = self.get("/table?impl=chaining")
+        self.assertNotIn("같은 칸 h =", html)
+
+    def test_linear_collision_is_labeled(self):
+        self.start()
+        self.post(self.A)
+        self.post(self.B)
+        _, html = self.get("/table?impl=linear")
+        self.assertIn("충돌 → 1칸 밀림", html)
+        self.assertIn("[6] → [7]", html)
+
+
+class TestServerMainArgs(unittest.TestCase):
+    def test_parse_capacity(self):
+        from server import parse_args
+        self.assertEqual(parse_args(["--capacity", "8"]).capacity, 8)
+        self.assertEqual(parse_args([]).capacity, 11)
